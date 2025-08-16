@@ -1,0 +1,74 @@
+version: '3.8'
+
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.3.0
+    container_name: zookeeper
+    networks:
+      - learning-net
+    ports:
+      - "2181:2181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+
+  kafka:
+    image: confluentinc/cp-kafka:7.3.0
+    container_name: kafka
+    networks:
+      - learning-net
+    ports:
+      - "9092:9092"
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_INTERNAL:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,PLAINTEXT_INTERNAL://kafka:29092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+
+  nessie:
+    image: ghcr.io/projectnessie/nessie:0.78.0
+    container_name: nessie
+    networks:
+      - learning-net
+    ports:
+      - "19120:19120"
+
+  spark-iceberg:
+    image: tabulario/spark-iceberg
+    container_name: spark-iceberg
+    networks:
+      - learning-net
+    depends_on:
+      - nessie
+    environment:
+      - SPARK_SQL_CATALOG_CATALOG__URI=http://nessie:19120/api/v1
+      - SPARK_SQL_CATALOG_CATALOG__REFINMEMORY=true
+      - SPARK_SQL_CATALOG_CATALOG__TYPE=nessie
+      - SPARK_SQL_CATALOG_CATALOG_WAREHOUSE=file:///tmp/warehouse
+      - SPARK_SQL_EXTENSIONS=org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions,org.projectnessie.spark.extensions.NessieSparkSessionExtensions
+    stdin_open: true
+    tty: true
+
+  flink:
+    image: apache/flink:1.18.1-scala_2.12-java11
+    container_name: flink
+    networks:
+      - learning-net
+    ports:
+      - "8081:8081"
+    depends_on:
+      - nessie
+    volumes:
+      - ./flink-jars:/opt/flink/usrlib
+    command: jobmanager
+    environment:
+      FLINK_PROPERTIES: "jobmanager.rpc.address: flink"
+
+
+networks:
+  learning-net:
