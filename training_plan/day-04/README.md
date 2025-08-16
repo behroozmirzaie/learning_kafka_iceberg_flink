@@ -1,0 +1,37 @@
+# Day 4: Kafka Topics and Partitions
+
+## Topic: Understanding Data Organization in Kafka
+
+Today, we'll take a deeper dive into topics and partitions, the fundamental way Kafka organizes and stores data.
+
+As we've learned, a topic is a category or feed name to which messages are published. Topics in Kafka are always multi-subscriber; that is, a topic can have zero, one, or many consumers that subscribe to the data written to it.
+
+### Partitions
+
+Each topic is divided into a number of partitions. A partition is an ordered, immutable sequence of records that is continually appended to—a structured commit log. The records in the partitions are each assigned a sequential ID number called the offset that uniquely identifies each record within the partition.
+
+Partitions serve two main purposes:
+
+1.  **Scalability:** They allow you to parallelize a topic by splitting the data over multiple brokers. This allows a topic to hold more data than can fit on a single server.
+2.  **Parallelism:** They allow multiple consumers in a consumer group to read from a topic in parallel.
+
+### Partition Keys
+
+When a producer sends a message to a topic, it can specify a key. Kafka's default partitioner uses the key to decide which partition to send the message to. The partitioner hashes the key and uses the result to map the message to a specific partition. This means that all messages with the same key will always go to the same partition.
+
+If the key is not provided, the producer will distribute messages to partitions in a round-robin fashion.
+
+### Real-World Example
+
+Imagine a ride-sharing app. The app needs to track the location of all its drivers in real-time. We can have a `driver_locations` topic to store the location updates.
+
+Each driver has a unique `driver_id`. If we use the `driver_id` as the key for the location update messages, we can guarantee that all location updates for a specific driver will be in the same partition and will be processed in the order they were sent. This is crucial for accurately tracking the driver's route.
+
+If we didn't use a key, the location updates for a single driver could be spread across multiple partitions, and we would lose the ordering guarantee.
+
+## Training Questions
+
+1.  Create a new topic called `user_activity` with 3 partitions. You can use the `kafka-topics.sh` command-line tool for this. (Hint: you'll need to `docker exec` into the `kafka` container).
+2.  Modify your `producer.py` script to send messages to the `user_activity` topic. Send messages with different keys (e.g., `user1`, `user2`, `user3`).
+3.  Use the `kafka-console-consumer.sh` tool to inspect the messages in each partition of the `user_activity` topic. Do you see messages with the same key in the same partition?
+4.  What are the trade-offs of having a large number of partitions for a topic?
