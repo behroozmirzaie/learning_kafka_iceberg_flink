@@ -26,6 +26,23 @@ PARTITIONED BY (hours(event_ts));
 
 When you query this table with a filter on `event_ts`, Iceberg will automatically prune the partitions that are not relevant to the query.
 
+### Choosing a Good Partitioning Strategy
+
+Just like choosing a good Kafka key, choosing the right partitioning strategy in Iceberg is critical for performance. A bad strategy can lead to a different kind of skew problem at the storage layer.
+
+The goal of partitioning is to create partitions that are not too big and not too small. You want to avoid:
+
+*   **Too many small partitions:** This creates a large number of small data files and too much metadata, which slows down query planning and can overwhelm the filesystem.
+*   **Too few large partitions:** This reduces the effectiveness of partition pruning, forcing the query engine to read more data than necessary.
+
+**Example Scenarios:**
+
+*   **Bad:** Partitioning a global customer table by `customer_id`. You would create millions or billions of partitions, each with only a tiny amount of data. This is a very common mistake.
+*   **Bad:** Partitioning sales data by `country` when 90% of your sales are in a single country. Queries for that country will have to scan a huge amount of data, while queries for other countries will be fast. This is a data skew problem, similar to a Kafka hot partition.
+*   **Good:** Partitioning event data by `month(event_ts)` or `day(event_ts)`. This is often a great starting point, as it groups data into predictable, reasonably-sized chunks. You can even partition by `day(event_ts)` and a second column like `event_category` to further subdivide the data, as long as the category has a reasonable number of unique values.
+
+As a rule of thumb, you should aim for partitions that contain at least several hundred megabytes (MB) to a few gigabytes (GB) of data. You will often need to evolve your partitioning strategy as your data grows.
+
 ### Maintenance
 
 Over time, as you write data to an Iceberg table, it can become fragmented with many small data files. This can hurt query performance. Iceberg provides maintenance operations to optimize the layout of the data.
@@ -37,7 +54,7 @@ Over time, as you write data to an Iceberg table, it can become fragmented with 
     CALL catalog.system.rewrite_data_files('db.my_table');
 
     -- Compact a specific partition
-    CALL catalog.system.rewrite_data_files(table => 'db.my_table', where => 'event_ts >= \'2023-10-27 00:00:00\' AND event_ts < \'2023-10-28 00:00:00\'');
+    CALL catalog.system.rewrite_data_files(table => 'db.my_table', where => 'event_ts >= \'2023-10-27 00:00:00\' AND event_ts < \'2023-10-28 00:00:00\');
     ```
 
 *   **Snapshot Expiration:** Every write to an Iceberg table creates a new snapshot. Over time, you can accumulate a large number of snapshots. You can expire old snapshots to clean up the table's history and delete the data files that are no longer needed.

@@ -29,6 +29,22 @@ Each driver has a unique `driver_id`. If we use the `driver_id` as the key for t
 
 If we didn't use a key, the location updates for a single driver could be spread across multiple partitions, and we would lose the ordering guarantee.
 
+### Real-World Challenge: Hot Partitions and Data Skew
+
+The key-based ordering guarantee is powerful, but it can lead to a common problem called a **"hot partition"** or **"data skew"**. This happens when one key is responsible for a disproportionately large amount of the message traffic.
+
+**Example:** Imagine an e-commerce site during a flash sale for a new phone. If you key all sales events by `product_id`, all events for that one popular phone will go to the same partition. This single partition will become a bottleneck, growing much larger and requiring more processing power than all the others, slowing down your entire system.
+
+**Solutions:**
+
+1.  **Re-evaluate Your Partition Key:** This is the best approach. The goal is to find a key that still gives you the ordering you need, but has higher cardinality (more unique values) to distribute the load.
+    *   **Strategy:** Instead of just `product_id`, you could use a **compound key** like `product_id + customer_id` or `product_id + supplier_id`. 
+    *   **Trade-off:** This is critical to understand. By changing the key, you change the ordering guarantee. With a key of `product_id + customer_id`, you now only guarantee order for a specific customer's events for that product, not for *all* events for that product. You must decide if this is an acceptable trade-off.
+
+2.  **Two-Stage Topic Pattern (Advanced):** For extreme cases, you can send all data to a first topic with a well-distributed key (like a random UUID). Then, a dedicated processing job can read from this topic and intelligently re-partition the data to a second topic, isolating the skew problem.
+
+Choosing the right partitioning key is a critical design decision that directly impacts the scalability and performance of your Kafka applications.
+
 ## Training Questions
 
 1.  Create a new topic called `user_activity` with 3 partitions. You can use the `kafka-topics.sh` command-line tool for this. (Hint: you'll need to `docker exec` into the `kafka` container).

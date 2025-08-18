@@ -1,15 +1,7 @@
-def main():
-    print("Hello from learning-kafka!")
-
+from kafka import KafkaProducer
 
 if __name__ == "__main__":
-    a = [_ for _ in range(5000)]
-    b = [_ for _ in range(1, 55)]
-
-    for i, j in zip(a, b):
-        print(i, j)
-        if j - i == 1:
-            continue
-        else:
-            print(f"Mismatch found: {i} and {j}")
-            break
+    producer = KafkaProducer(bootstrap_servers='127.0.0.1:9092')
+    producer.send(topic='ubd', value=b'Hello, Kafka!', key="key1")
+    producer.flush()
+    print("Message sent to Kafka topic ")

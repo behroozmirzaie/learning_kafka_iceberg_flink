@@ -16,6 +16,18 @@ Traditional data lakes often use table formats like Hive. While Hive has been a 
 
 Iceberg is an open table format designed to address these limitations. It's not a storage engine or a processing engine; it's a specification for how to manage a large, slow-moving dataset in a distributed file system like HDFS or a cloud object store like Amazon S3.
 
+#### Iceberg is a Format, Not a Service
+
+This is the most important concept to understand. You cannot "run" Iceberg by itself. It is a set of rules—a blueprint—for how data files and metadata files should be organized. To actually read or write data in the Iceberg format, you need a **computation engine** like Apache Spark or Apache Flink. In our setup, the `spark-iceberg` and `flink` containers are the engines that understand the Iceberg blueprint and do the actual work.
+
+#### The Two Meanings of "Iceberg": Format vs. API
+
+The name "Iceberg" can be confusing because it refers to two related but distinct concepts:
+
+1.  **The Table Format (The Blueprint for Data):** This is the physical specification for how data is stored. It defines the structure of metadata files, manifest files, and data files on disk. This is the core of Iceberg.
+
+2.  **The REST API (The Blueprint for Communication):** This is a standardized protocol that defines how engines (like Spark) should communicate with a **catalog** (like Nessie). The API provides a standard way to request information like "Create a table," "What is the current state of this table?," or "Commit these changes." Nessie implements this API, acting like a librarian that an engine can talk to. The engine asks the librarian (Nessie) where to find a book (a table's metadata), and the librarian points to the right location. The engine then uses its knowledge of the Table Format to actually read the book.
+
 ### Core Concepts
 
 *   **Tables:** An Iceberg table is a collection of data files, just like a Hive table. However, the state of an Iceberg table is managed by a metadata file, not by a directory listing.
