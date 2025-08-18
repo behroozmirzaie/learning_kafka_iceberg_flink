@@ -8,7 +8,23 @@ A consumer subscribes to one or more topics and reads the messages in the order 
 
 ### Key Concepts
 
-*   **Consumer Groups:** A consumer group is a set of consumers that cooperate to consume messages from a topic. Each partition of a topic is consumed by exactly one consumer in the group. This is how Kafka achieves scalable consumption.
+*   **Consumer Groups:** A consumer group is one or more consumers that work together to process the messages from a topic. The key rule is: **within a single consumer group, each partition is consumed by exactly one consumer.** This is how Kafka achieves scalable, parallel, and safe message processing.
+
+    Let's imagine a topic with 4 partitions (P0, P1, P2, P3) and a group named `my-group`:
+
+    *   **Scenario 1: 1 Consumer.** If you start one consumer in `my-group`, it will be assigned all 4 partitions.
+        `Consumer 1  <-- reads from -->  [P0, P1, P2, P3]`
+
+    *   **Scenario 2: 2 Consumers.** If you start a second consumer in `my-group`, Kafka automatically rebalances the load. 
+        `Consumer 1  <-- reads from -->  [P0, P1]`
+        `Consumer 2  <-- reads from -->  [P2, P3]`
+
+    *   **Scenario 3: 4 Consumers.** If you start four consumers, each will be assigned one partition. This is the maximum level of parallelism for this topic.
+        `Consumer 1 -> [P0]`, `Consumer 2 -> [P1]`, `Consumer 3 -> [P2]`, `Consumer 4 -> [P3]`
+
+    *   **Scenario 4: 5 Consumers.** If you start a fifth consumer, it will be **idle**. It will not be assigned any partitions and will wait until another consumer leaves the group.
+
+    This design is critical because it guarantees message ordering within a partition and prevents two consumers from processing the same message.
 *   **Offset Management:** As a consumer reads messages, it needs to keep track of which messages it has already processed. This is done by committing the offset of the last processed message. Offsets are committed to a special Kafka topic called `__consumer_offsets`.
 *   **Deserialization:** Just as producers serialize messages, consumers must deserialize them from a byte array back into an object or data structure that the application can use.
 
