@@ -1,20 +1,16 @@
-# Day 10: Connecting Kafka and Spark Structured Streaming
+# Day 10: Connecting Kafka to Streaming Engines
 
-## Topic: Introduction to Spark Structured Streaming
+We've covered the basics of Kafka and Iceberg. Now, it's time to start connecting them with a stream processing engine. This allows you to read data continuously from Kafka and process it in near-real-time.
 
-We've covered the basics of Kafka and Iceberg. Now, it's time to start connecting them. Today, we'll learn about Spark Structured Streaming, a scalable and fault-tolerant stream processing engine built on the Spark SQL engine.
+---
 
-### What is Structured Streaming?
+### Option 1: Using Spark Structured Streaming
 
-Structured Streaming allows you to process streaming data in a way that is very similar to how you process batch data. You can express your streaming computation as a standard batch-like query on a DataFrame or Dataset.
+Spark Structured Streaming is a stream processing engine built on the Spark SQL engine. It lets you work with streaming data using the same DataFrame API you would use for batch data.
 
-The Spark SQL engine takes care of running it incrementally and continuously and updating the final result as streaming data continues to arrive.
+#### **Reading from Kafka with PySpark**
 
-### Reading from Kafka
-
-Structured Streaming has a built-in connector for reading data from Kafka. You can create a streaming DataFrame that subscribes to a Kafka topic.
-
-Here's a conceptual PySpark code snippet:
+The most common way to use Structured Streaming is with the DataFrame API in Python or Scala. Here's a conceptual PySpark code snippet:
 
 ```python
 from pyspark.sql import SparkSession
@@ -38,26 +34,56 @@ query = df.selectExpr("CAST(key AS STRING)", "CAST(value AS STRING)") \
 
 query.awaitTermination()
 ```
+This code defines a streaming query that reads from Kafka and prints the results to the console. The query runs continuously, processing data as it arrives.
 
-This code will:
+---
 
-1.  Create a SparkSession.
-2.  Create a streaming DataFrame that reads from the `my_topic` Kafka topic.
-3.  Select the key and value from the Kafka messages and cast them to strings.
-4.  Write the resulting DataFrame to the console.
+### Option 2: Using Flink SQL
 
-### Real-World Example
+Flink allows you to treat a Kafka topic as a SQL table. You can declare a table using `CREATE TABLE` and then run continuous queries against it.
 
-Imagine a social media company that wants to analyze the sentiment of tweets in real-time. They can have a Kafka topic where all new tweets are published.
+First, connect to the Flink SQL Client: `docker exec -it flink sql-client`
 
-They can then use Spark Structured Streaming to read the tweets from the Kafka topic, run a sentiment analysis model on each tweet, and then write the results to another Kafka topic or a database.
+#### **Declaring a Kafka Table**
 
-This allows them to have a real-time dashboard that shows the overall sentiment of tweets about their brand.
+You can define a table that is backed by a Kafka topic. Flink will handle the connection and reading of messages.
+
+```sql
+CREATE TABLE kafka_source_table (
+  `user_id` STRING,
+  `event_timestamp` TIMESTAMP(3),
+  `url` STRING
+  -- Use METADATA columns to access Kafka-specific fields
+  -- `key` METADATA, 
+  -- `topic` METADATA,
+  -- `partition` METADATA,
+  -- `offset` METADATA
+) WITH (
+  'connector' = 'kafka',
+  'topic' = 'user_activity', -- The Kafka topic to read from
+  'properties.bootstrap.servers' = 'kafka:9092',
+  'scan.startup.mode' = 'earliest-offset',
+  'value.format' = 'json' -- Specify the format of the message value
+);
+```
+
+#### **Running a Continuous Query**
+
+Once the table is declared, you can run a `SELECT` query on it. Unlike a normal database query, this query will **not** terminate. It will run forever, continuously processing the new messages that arrive in the Kafka topic and emitting updated results.
+
+```sql
+-- This is a continuous query that will never end
+SELECT * FROM kafka_source_table;
+```
+
+---
 
 ## Training Questions
 
-1.  Create a new Python script (`stream_processor.py`).
-2.  In this script, use PySpark to read from the `test_topic` you created on Day 2.
-3.  Instead of writing to the console, try to parse the message if it's a JSON string and then select a specific field from the JSON.
-4.  Run your `producer.py` script to send some JSON messages to `test_topic` and see if your `stream_processor.py` can correctly parse them.
-5.  What is the difference between `outputMode("append")`, `outputMode("complete")`, and `outputMode("update")` in Structured Streaming?
+1.  Choose either Spark or Flink for this exercise.
+2.  Create a new Kafka topic called `user_activity`.
+3.  Write a producer that sends JSON messages to this topic. Each message should contain fields like `user_id`, `event_timestamp`, and `url`.
+4.  Write a streaming application (either PySpark or Flink SQL) that reads from the `user_activity` topic and prints the parsed data to the console.
+5.  What is the difference between `outputMode("append")` in Spark and a continuous query in Flink? How are they similar?
+
+```

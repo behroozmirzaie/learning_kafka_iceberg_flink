@@ -6,97 +6,65 @@ Today, we'll explore two important aspects of managing large Iceberg tables: par
 
 ### Partitioning
 
-Partitioning is the key to achieving good performance with large tables. Partitioning divides a table into smaller, more manageable parts based on the values of one or more columns.
+Partitioning is the key to achieving good performance with large tables. It divides a table into smaller parts based on column values, allowing for **partition pruning** where query engines skip reading irrelevant data.
 
-When you query a partitioned table with a filter on the partition column, Iceberg can skip reading the partitions that don't match the filter. This is called partition pruning and can dramatically improve query performance.
-
-As we saw on Day 6, Iceberg supports **hidden partitioning**. This means you can partition by a transformed value of a column, without having to create a separate column for the transformed value.
-
-For example, you can partition a table of events by the hour of the event timestamp:
-
-```sql
-CREATE TABLE catalog.logs.events (
-    event_id BIGINT,
-    event_ts TIMESTAMP,
-    message STRING
-)
-USING iceberg
-PARTITIONED BY (hours(event_ts)); 
-```
-
-When you query this table with a filter on `event_ts`, Iceberg will automatically prune the partitions that are not relevant to the query.
+Iceberg's **hidden partitioning** is a key feature. It creates partition values from source columns using transform functions (`days`, `hours`, `bucket`, `truncate`) without creating extra physical columns in your table. This saves space and prevents user error.
 
 ### Choosing a Good Partitioning Strategy
 
-Just like choosing a good Kafka key, choosing the right partitioning strategy in Iceberg is critical for performance. A bad strategy can lead to a different kind of skew problem at the storage layer.
+Choosing the right partitioning strategy is critical for performance. The goal is to create partitions that are not too big and not too small.
 
-The goal of partitioning is to create partitions that are not too big and not too small. You want to avoid:
+*   **Bad:** Partitioning by a high-cardinality column like `customer_id` creates millions of tiny partitions and excessive metadata, which is very slow.
+*   **Bad:** Partitioning by a low-cardinality but skewed column like `country` (where one country has 90% of the data) creates a few huge partitions, which reduces the effectiveness of pruning.
+*   **Good:** Partitioning by a time-based column (`day(event_ts)`) is often a great start. For high-cardinality columns like `user_id`, combining transforms is powerful: `PARTITIONED BY (days(event_ts), bucket(512, user_id))`.
 
-*   **Too many small partitions:** This creates a large number of small data files and too much metadata, which slows down query planning and can overwhelm the filesystem.
-*   **Too few large partitions:** This reduces the effectiveness of partition pruning, forcing the query engine to read more data than necessary.
+As a rule of thumb, aim for partitions that are several hundred megabytes (MB) to a few gigabytes (GB) in size.
 
-**Example Scenarios:**
+---
 
-*   **Bad:** Partitioning a global customer table by `customer_id`. You would create millions or billions of partitions, each with only a tiny amount of data. This is a very common mistake.
-*   **Bad:** Partitioning sales data by `country` when 90% of your sales are in a single country. Queries for that country will have to scan a huge amount of data, while queries for other countries will be fast. This is a data skew problem, similar to a Kafka hot partition.
-*   **Good:** Partitioning event data by `month(event_ts)` or `day(event_ts)`. This is often a great starting point, as it groups data into predictable, reasonably-sized chunks. You can even partition by `day(event_ts)` and a second column like `event_category` to further subdivide the data, as long as the category has a reasonable number of unique values.
+### Table Maintenance
 
-As a rule of thumb, you should aim for partitions that contain at least several hundred megabytes (MB) to a few gigabytes (GB) of data. You will often need to evolve your partitioning strategy as your data grows.
+Over time, write operations can create many small data files, which hurts read performance. Iceberg provides maintenance procedures to compact these small files into larger, more optimal ones.
 
-#### Strategy for High-Cardinality Columns (e.g., `user_id`)
-To solve the problem of partitioning by a column with millions of unique values, you should use the `bucket(N, col)` transform. This function hashes the column value and assigns it to one of `N` buckets.
+#### **Using Spark SQL**
+Spark provides a rich set of `CALL` procedures for maintenance.
 
-`PARTITIONED BY (bucket(4096, user_id))`
+```sql
+-- Compact the entire table
+CALL catalog.system.rewrite_data_files(table => 'db.my_table');
 
-This creates a fixed number of partitions (4096 in this case). When you query for a specific user (`WHERE user_id = 123`), Iceberg hashes the ID to figure out exactly which of the 4096 buckets to read, giving you excellent performance without creating billions of partitions.
+-- Compact a specific partition using a WHERE clause
+CALL catalog.system.rewrite_data_files(
+    table => 'db.my_table',
+    where => 'event_ts >= \'2023-10-27 00:00:00\' AND event_ts < \'2023-10-28 00:00:00\'
+);
 
-This is represented physically by sub-directories. For a table partitioned by `bucket(4, user_id)`, the folder structure would look like this, with all data living inside a single main location (e.g., one S3 bucket):
-
-```
-/path/to/table/
-└── data/
-    ├── user_id_bucket=0/
-    │   └── 00001-file.parquet
-    ├── user_id_bucket=1/
-    │   └── 00002-file.parquet
-    ├── user_id_bucket=2/
-    │   └── 00003-file.parquet
-    └── user_id_bucket=3/
-        └── 00004-file.parquet
+-- Expire old snapshots to clean up metadata and data files
+CALL catalog.system.expire_snapshots(table => 'db.my_table', older_than => TIMESTAMP '2023-10-01 00:00:00');
 ```
 
-### Maintenance
+#### **Using Flink SQL**
+Flink also provides table procedures for maintenance, though the syntax and available options may differ slightly from Spark.
 
-Over time, as you write data to an Iceberg table, it can become fragmented with many small data files. This can hurt query performance. Iceberg provides maintenance operations to optimize the layout of the data.
+```sql
+-- Flink's compaction procedure is executed via an INSERT statement
+-- This command compacts the whole table
+INSERT INTO my_table_compacted /*+ OPTIONS('compaction.small-file.size'='1048576') */
+SELECT * FROM my_table;
 
-*   **Compaction:** Compaction is the process of rewriting small data files into larger, more optimal files. This can significantly improve read performance.
+-- To compact specific partitions, you can add a WHERE clause to the SELECT statement.
 
-    ```sql
-    -- Compact the entire table
-    CALL catalog.system.rewrite_data_files('db.my_table');
+-- Flink does not have a direct equivalent to expire_snapshots via SQL.
+-- Snapshot expiration is typically handled via the Flink DataStream or Java APIs,
+-- or by using the Spark procedure on the same table.
+```
 
-    -- Compact a specific partition
-    CALL catalog.system.rewrite_data_files(table => 'db.my_table', where => 'event_ts >= \'2023-10-27 00:00:00\' AND event_ts < \'2023-10-28 00:00:00\');
-    ```
-
-*   **Snapshot Expiration:** Every write to an Iceberg table creates a new snapshot. Over time, you can accumulate a large number of snapshots. You can expire old snapshots to clean up the table's history and delete the data files that are no longer needed.
-
-### Real-World Example
-
-Consider a table that stores website clickstream data. This table can grow to be very large, with billions of events per day.
-
-To manage this table effectively, we can partition it by the hour of the event timestamp. This will allow us to efficiently query the data for a specific time range.
-
-We can also set up a daily job that compacts the data for the previous day. This will ensure that the table is always optimized for read performance.
-
-Finally, we can set up a policy to expire snapshots that are older than 30 days. This will keep the table's history manageable and reclaim storage space.
+---
 
 ## Training Questions
 
-1.  Create a new table called `catalog.learning.sales` with columns for `sale_id` (INT), `product` (STRING), `amount` (DOUBLE), and `sale_ts` (TIMESTAMP). Partition the table by month of the `sale_ts`.
+1.  Create a new table called `catalog.learning.sales` with columns for `sale_id` (INT), `product` (STRING), `amount` (DOUBLE), and `sale_ts` (TIMESTAMP). Partition the table by `month(sale_ts)`.
 2.  Insert some sample sales data into the table for different months.
 3.  Run a query to select the sales for a specific month. How does Iceberg use partitioning to make this query efficient?
-4.  Run the `rewrite_data_files` procedure to compact your `sales` table.
+4.  Using Spark, run the `rewrite_data_files` procedure to compact your `sales` table.
 5.  What are the benefits of regularly compacting an Iceberg table?
-
-```
