@@ -21,7 +21,7 @@ CREATE TABLE catalog.logs.events (
     message STRING
 )
 USING iceberg
-PARTITIONED BY (hours(event_ts));
+PARTITIONED BY (hours(event_ts)); 
 ```
 
 When you query this table with a filter on `event_ts`, Iceberg will automatically prune the partitions that are not relevant to the query.
@@ -42,6 +42,28 @@ The goal of partitioning is to create partitions that are not too big and not to
 *   **Good:** Partitioning event data by `month(event_ts)` or `day(event_ts)`. This is often a great starting point, as it groups data into predictable, reasonably-sized chunks. You can even partition by `day(event_ts)` and a second column like `event_category` to further subdivide the data, as long as the category has a reasonable number of unique values.
 
 As a rule of thumb, you should aim for partitions that contain at least several hundred megabytes (MB) to a few gigabytes (GB) of data. You will often need to evolve your partitioning strategy as your data grows.
+
+#### Strategy for High-Cardinality Columns (e.g., `user_id`)
+To solve the problem of partitioning by a column with millions of unique values, you should use the `bucket(N, col)` transform. This function hashes the column value and assigns it to one of `N` buckets.
+
+`PARTITIONED BY (bucket(4096, user_id))`
+
+This creates a fixed number of partitions (4096 in this case). When you query for a specific user (`WHERE user_id = 123`), Iceberg hashes the ID to figure out exactly which of the 4096 buckets to read, giving you excellent performance without creating billions of partitions.
+
+This is represented physically by sub-directories. For a table partitioned by `bucket(4, user_id)`, the folder structure would look like this, with all data living inside a single main location (e.g., one S3 bucket):
+
+```
+/path/to/table/
+└── data/
+    ├── user_id_bucket=0/
+    │   └── 00001-file.parquet
+    ├── user_id_bucket=1/
+    │   └── 00002-file.parquet
+    ├── user_id_bucket=2/
+    │   └── 00003-file.parquet
+    └── user_id_bucket=3/
+        └── 00004-file.parquet
+```
 
 ### Maintenance
 

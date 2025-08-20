@@ -60,6 +60,14 @@ query = parsed_df.writeStream \
 query.awaitTermination()
 ```
 
+### The Importance of Micro-Batching and Triggers
+
+A key challenge when writing a high-velocity stream to a file-based format like Iceberg is avoiding the creation of millions of tiny files and snapshots. Committing every single message as its own transaction would be a disaster for performance.
+
+This is solved by **micro-batching**. The streaming engine reads from Kafka and collects messages in memory for a short period. Once a **trigger** condition is met, the engine writes the entire collected "micro-batch" of data to Iceberg in a single transaction, which creates a single new snapshot.
+
+The line `.trigger(processingTime='1 minute')` in the code above is where this is configured. It tells Spark to process all the data that has arrived in a one-minute interval as a single batch. This provides a balance between near-real-time data ingestion and the need to write data efficiently to the data lake.
+
 ### Real-World Example
 
 Consider a fleet management company that tracks the location of its trucks in real-time. The trucks send their location data to a Kafka topic.
@@ -75,4 +83,3 @@ This allows them to have a near real-time view of their fleet's location, as wel
 3.  Create a producer script that sends JSON messages to the `sensor_data` topic. Each message should contain a `sensor_id`, a `timestamp`, and a `reading`.
 4.  Create a Spark Structured Streaming script that reads from the `sensor_data` topic, parses the JSON, and writes the data to the `sensor_readings` Iceberg table.
 5.  Run your producer and streaming scripts. After a few minutes, query the `sensor_readings` table to see if the data has been written correctly.
-

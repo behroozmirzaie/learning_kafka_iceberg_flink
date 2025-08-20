@@ -45,6 +45,26 @@ The key-based ordering guarantee is powerful, but it can lead to a common proble
 
 Choosing the right partitioning key is a critical design decision that directly impacts the scalability and performance of your Kafka applications.
 
+### Managing Topics and Cluster Architecture
+
+#### Who is responsible for creating topics?
+In a real-world environment, topic creation is a managed process. The responsibility usually falls to:
+*   **Platform/Operations Team (Recommended):** In most organizations, a central team manages the Kafka cluster. Developers request a topic, and the platform team creates it with the correct configurations. This prevents topic sprawl and ensures stability.
+*   **Developers:** In smaller teams, developers might create topics themselves. 
+*   **Automatic Creation (Development Only):** Kafka can be configured with `auto.create.topics.enable=true` to create topics on the fly. This is useful for local testing but is **highly discouraged in production** as it leads to topics with non-optimal default settings.
+
+#### How are topics created and deleted?
+The primary tool is `kafka-topics.sh`, a command-line script that exists **inside the Kafka container**, not in your local project folder. You run it using `docker exec`:
+*   **Create a topic:** `docker exec kafka kafka-topics.sh --bootstrap-server localhost:9092 --create --topic my-topic --partitions 3`
+*   **Delete a topic:** `docker exec kafka kafka-topics.sh --bootstrap-server localhost:9092 --delete --topic my-topic` (Note: This requires the broker to have `delete.topic.enable=true`, which is the default in this learning environment).
+
+#### What is ZooKeeper?
+ZooKeeper is the coordinator for the Kafka cluster. It acts as the authoritative source of truth for the cluster's metadata. Think of it as the "brain" or "nervous system" that Kafka depends on to function. Its key responsibilities include:
+*   **Cluster Membership:** Tracking which brokers are currently online.
+*   **Controller Election:** Electing one broker to be the cluster controller.
+*   **Storing Configurations:** Storing all topic configurations, access control lists, etc.
+(Note: Newer versions of Kafka can run in a mode called KRaft, which removes the ZooKeeper dependency, but our setup uses the traditional and still very common ZooKeeper-based architecture).
+
 ## Training Questions
 
 1.  Create a new topic called `user_activity` with 3 partitions. You can use the `kafka-topics.sh` command-line tool for this. (Hint: you'll need to `docker exec` into the `kafka` container).
