@@ -14,6 +14,55 @@ The environment consists of the following services, all managed by Docker Compos
 *   **Apache Spark:** A unified analytics engine for large-scale data processing, used here to interact with Iceberg tables.
 *   **Apache Flink:** A stream processing engine, also configured to interact with Iceberg.
 
+## Architecture Overview
+
+The following diagram illustrates how the major components in this environment interact when you query an Iceberg table.
+
+```mermaid
+graph TD
+    subgraph User
+        A[Flink/Spark SQL Client]
+    end
+
+    subgraph Processing Layer
+        B[Flink / Spark Engine]
+    end
+
+    subgraph Catalog
+        C[Nessie Service]
+    end
+
+    subgraph Storage Layer (MinIO / S3)
+        D[Iceberg Metadata <br><i>metadata.json, manifests</i>]
+        E[Iceberg Data <br><i>.parquet files</i>]
+    end
+
+    A -- 1. SQL Query --> B
+    B -- 2. 'Where is the table metadata?' --> C
+    C -- 3. 'It is at this path in storage' --> B
+    B -- 4. Reads metadata files --> D
+    B -- 5. Reads data files --> E
+    B -- 6. Returns Result --> A
+
+    style C fill:#cde4ff,stroke:#6a8ebf
+    style D fill:#d5f0d5,stroke:#7aa87a
+    style E fill:#fff2cc,stroke:#d6b656
+```
+
+### How It Works
+
+1.  A user submits a **SQL Query** to a processing engine like Spark or Flink.
+2.  The engine needs to understand the table, so it asks the **Nessie Catalog**: "Where is the current metadata for this table?"
+3.  Nessie's only job is to provide the path to the current metadata file (e.g., `s3://warehouse/.../table.metadata.json`). It acts as the source of truth for the table's state.
+4.  The engine reads the **Iceberg Metadata** files from MinIO (our S3-compatible storage). These files describe the table's schema, partitions, and history.
+5.  From the metadata, the engine discovers which specific **Iceberg Data** files (.parquet) it needs to read from MinIO to satisfy the query.
+6.  The engine processes the data and returns the final result to the user.
+
+This architecture decouples the processing engines (Spark/Flink) from the catalog (Nessie) and the storage (MinIO), allowing them to scale and evolve independently.
+
+### Viewing the Diagram
+The diagram above is in the [Mermaid](https://mermaid.js.org/) format. It is already in the correct format for a Markdown file (`.md`). When you view this `README.md` file on a platform like GitHub, GitLab, or in many modern text editors, it will be automatically rendered as a visual diagram.
+
 ## Getting Started
 
 ### Prerequisites
